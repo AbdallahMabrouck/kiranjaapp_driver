@@ -1,6 +1,7 @@
 import 'package:email_validator/email_validator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'package:kiranjaapp_driver/screens/register_screen.dart';
 import 'package:kiranjaapp_driver/services/firebase_services.dart';
 import 'package:provider/provider.dart';
 import '../provider/auth_provider.dart';
@@ -17,7 +18,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  FirebaseServices _services = FirebaseServices();
+  final FirebaseServices _services = FirebaseServices();
   final _formKey = GlobalKey<FormState>();
   Icon icon = const Icon(Icons.email_outlined);
   // initializing with an icon
@@ -25,7 +26,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailTextControler = TextEditingController();
   String email = "";
   String password = "";
-  bool _loading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -69,16 +69,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextFormField(
                         controller: _emailTextControler,
                         validator: (value) {
-                          if (value!.isEmpty) {
+                          final emailText = _emailTextControler.text;
+                          if (value == null || value.isEmpty) {
                             return "Enter Email";
                           }
                           final bool _isValid =
-                              EmailValidator.validate(_emailTextControler.text);
+                              EmailValidator.validate(emailText);
                           if (!_isValid) {
                             return "Invalid Email format";
                           }
                           setState(() {
-                            email = value;
+                            email = emailText;
                           });
                           return null;
                         },
@@ -165,63 +166,67 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 ),
                                 onPressed: () {
-                                  if (_formKey.currentState!.validate()) {
+                                  if (_formKey.currentState != null &&
+                                      _formKey.currentState!.validate()) {
                                     EasyLoading.show(status: "Please wait ...");
                                     _services.validateUser(email).then((value) {
                                       if (value.exists) {
-                                        if (value.data()["password"] ==
-                                            password) {
-                                          EasyLoading.show(
-                                              status: "Logging in ...");
-                                          EasyLoading.dismiss();
+                                        final data = value.data()
+                                            as Map<String, dynamic>?;
+
+                                        if (data != null &&
+                                            data["password"] != null) {
+                                          final storedPassword =
+                                              data["password"] as String;
+                                          if (storedPassword == password) {
+                                            _authData
+                                                .loginBoys(email, password)
+                                                .then((credential) {
+                                              if (credential != null) {
+                                                EasyLoading.showSuccess(
+                                                        "Logged in Successfully")
+                                                    .then((value) {
+                                                  Navigator
+                                                      .pushReplacementNamed(
+                                                          context,
+                                                          HomeScreen.id);
+                                                });
+                                              } else {
+                                                EasyLoading.showInfo(
+                                                        "Need to complete Registration")
+                                                    .then((value) {
+                                                  _authData.getEmail(email);
+                                                  Navigator.pushNamed(context,
+                                                      RegisterScreen.id);
+                                                });
+                                                /*ScaffoldMessenger.of(context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          _authData.error)));*/
+                                              }
+                                            });
+                                          } else {
+                                            EasyLoading.showError(
+                                                "Invalid Password");
+                                          }
                                         } else {
                                           EasyLoading.showError(
-                                              "Invalid Password");
+                                              "$email is not registered as our delivery driver");
                                         }
-                                      } else {
-                                        EasyLoading.showError(
-                                            "$email is not registered as our delivery driver");
                                       }
                                     });
                                   }
                                 },
-                                child: _loading
-                                    ? const LinearProgressIndicator(
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                                Colors.white),
-                                        backgroundColor: Colors.transparent,
-                                      )
-                                    : const Text(
-                                        "Login",
-                                        style: TextStyle(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 20),
-                                      )),
+                                child: const Text(
+                                  "Login",
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 20),
+                                )),
                           ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          ElevatedButton(
-                              onPressed: () {
-                                Navigator.pushNamed(context, RegisterScreen.id);
-                              },
-                              child: RichText(
-                                  text: const TextSpan(text: "", children: [
-                                TextSpan(
-                                    text: "Don't have an account ? ",
-                                    style: TextStyle(color: Colors.black)),
-                                TextSpan(
-                                    text: "Register",
-                                    style: TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 20)),
-                              ]))),
-                        ],
-                      )
                     ],
                   ),
                 ),
