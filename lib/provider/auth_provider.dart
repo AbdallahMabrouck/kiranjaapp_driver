@@ -1,77 +1,175 @@
-
-
 import 'dart:io';
-
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:location/location.dart';
 
-class AuthProvider extends ChangeNotifier{
-  File image;
+import '../screens/home_screen.dart';
+
+class AuthProvider extends ChangeNotifier {
+  File? image;
   bool isPicAvail = false;
   String pickerError = "";
+  String error = "";
 
   // shop data
-  double shopLatitude;
-  double shopLongitude;
-  String shopAddress;
-  String placeName;
-  String email; 
+  double? shopLatitude;
+  double? shopLongitude;
+  String? shopAddress;
+  String? placeName;
+  String email = "";
+  bool loading = false;
 
+  final CollectionReference _boys =
+      FirebaseFirestore.instance.collection("boyss");
 
-  getEmail(email){
-    this.email = email; 
+  getEmail(email) {
+    this.email = email;
     notifyListeners();
   }
 
   // reduce image size
-  Future<File> getImage() async {
+  Future<File?> getImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.getImage(source: ImageSource.gallery);
-    if(pickedFile != null){
-      this.image = File(pickedFile.path);
+    final pickedFile =
+        await picker.pickImage(source: ImageSource.gallery, imageQuality: 20);
+    if (pickedFile != null) {
+      image = File(pickedFile.path);
       notifyListeners();
     } else {
-      this.pickerError = "No image selected";
+      pickerError = "No image selected";
       print("No image selected");
       notifyListeners();
     }
-    return this.image;
-    
+    return image;
   }
 
-  Future getCurrentAddress() async {
+  Future<void> getCurrentAddress() async {
     Location location = Location();
 
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
-    LocationData _locationData;
+    LocationData? _locationData;
 
     _serviceEnabled = await location.serviceEnabled();
-    if(!_serviceEnabled){
+    if (!_serviceEnabled) {
       _serviceEnabled = await location.requestService();
-      if(!_serviceEnabled){
+      if (!_serviceEnabled) {
         return;
       }
     }
-    
+
     _permissionGranted = await location.hasPermission();
-    if(_permissionGranted == PermissionStatus.denied){
+    if (_permissionGranted == PermissionStatus.denied) {
       _permissionGranted = await location.requestPermission();
-      if(_permissionGranted != PermissionStatus.granted){
+      if (_permissionGranted != PermissionStatus.granted) {
         return;
       }
-    } 
+    }
 
     _locationData = await location.getLocation();
-    this.shopLatitude = _locationData.latittude;
-    this.shopLongitude = _locationData.longitude;
+    shopLatitude = _locationData.latitude;
+    shopLongitude = _locationData.longitude;
     notifyListeners();
 
-    final coordinates = Coordinates(_locationData.latittude, _locationData.longitude);
-    var _addresses = await Geocoder.local.findAddressesFromCoordinates(coordinates);
-    var shopAddress = _addresses.first;
-    this.shopAddress = shopAddress.addressLine;
-    this.placeName = shopAddress.featureName;
+    // Perform reverse geocoding using Google Maps Geocoding API
+    const apiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+    final response = await http.get(
+      Uri.parse(
+          'https://maps.googleapis.com/maps/api/geocode/json?latlng=${_locationData.latitude},${_locationData.longitude}&key=$apiKey'),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['results'] != null && data['results'].isNotEmpty) {
+        final address = data['results'][0]['formatted_address'];
+        shopAddress = address;
+        placeName = address;
+        notifyListeners();
+      }
+    }
+  }
+
+  // register vendor using email
+  Future<UserCredential?> registerBoys(String email, String password) async {
+    this.email = email;
     notifyListeners();
-    return shopAddress;
-}
+    UserCredential? userCredential;
+    try {
+      userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(email: email, password: password);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == "weak-password") {
+        error = "The password provided is too weak";
+        notifyListeners();
+      } else if (e.code == "email-already-in-use") {
+        error = "The account already exists for that email";
+        notifyListeners();
+      }
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+    return userCredential;
+  }
+
+  Future<UserCredential?> loginBoys(String email, String password) async {
+    this.email = email;
+    notifyListeners();
+    UserCredential? userCredential;
+    try {
+      userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: password);
+    } on FirebaseAuthException catch (e) {
+      error = e.code;
+      notifyListeners();
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+    return userCredential;
+  }
+
+  // reset password
+  Future<void> resetPassword(String email) async {
+    this.email = email;
+    notifyListeners();
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      error = e.code;
+      notifyListeners();
+    } catch (e) {
+      error = e.toString();
+      notifyListeners();
+    }
+  }
+
+  // save vendor data to Firestore
+  Future<void> saveBoysDataToDb({
+    required String url,
+    required String name,
+    required String mobile,
+    required String password,
+    required BuildContext context,
+  }) async {
+    User? user = FirebaseAuth.instance.currentUser;
+
+    await _boys.doc(email).update({
+      "uid": user!.uid,
+      "name": name,
+      "mobile": mobile,
+      "password": password,
+      "address": "${placeName ?? ''} : ${shopAddress ?? ''}",
+      "location": GeoPoint(shopLatitude ?? 0, shopLongitude ?? 0),
+      "imageUrl": url,
+      "accVerified": true,
+    }).whenComplete(() {
+      Navigator.pushReplacementNamed(context, HomeScreen.id);
+    });
+    return;
+  }
 }
