@@ -11,7 +11,7 @@ import 'package:provider/provider.dart';
 
 void main() async {
   Provider.debugCheckInvalidValueType = null;
-  WidgetFlutterBinding.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   runApp(MultiProvider(
     providers: [
