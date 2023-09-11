@@ -1,5 +1,324 @@
-import 'package:flutter/cupertino.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+
+import '../services/firebase_services.dart';
+import '../services/order_services.dart';
+
+class OrderSummaryCard extends StatefulWidget {
+  final DocumentSnapshot document;
+  const OrderSummaryCard({Key? key, required this.document}) : super(key: key);
+
+  @override
+  State<OrderSummaryCard> createState() => _OrderSummaryCardState();
+}
+
+class _OrderSummaryCardState extends State<OrderSummaryCard> {
+  final OrderServices _orderServices = OrderServices();
+  final FirebaseServices _services = FirebaseServices();
+
+  DocumentSnapshot? _customer;
+
+  @override
+  void initState() {
+    super.initState();
+    final Map<String, dynamic>? documentData =
+        widget.document.data() as Map<String, dynamic>?;
+
+    final userId = documentData?["userId"] as String?;
+    if (userId != null) {
+      _services.getCustomerDetails(userId).then((value) {
+        if (value.exists) {
+          setState(() {
+            _customer = value;
+          });
+        } else {
+          print("No data");
+        }
+      });
+    } else {
+      print("No userId found");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, dynamic>? documentData =
+        widget.document.data() as Map<String, dynamic>?;
+
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          ListTile(
+            horizontalTitleGap: 0,
+            leading: CircleAvatar(
+              backgroundColor: Colors.white,
+              radius: 14,
+              child: _orderServices.statusIcon(widget.document),
+            ),
+            title: Text(
+              documentData?["orderStatus"] as String? ?? "",
+              style: TextStyle(
+                fontSize: 12,
+                color: _orderServices.statusColor(widget.document),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            subtitle: Text(
+              "On ${DateFormat.yMMMd().format(DateTime.parse(documentData?["timestamp"] as String? ?? ""))}",
+              style: const TextStyle(fontSize: 12),
+            ),
+            trailing: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Payment Type : ${documentData?["cod"] == true ? "Cash on Delivery" : "Paid Online"}",
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  "Amount : \$${documentData?["total"]?.toStringAsFixed(0) as String? ?? ""}",
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          // need to bring customer details
+          if (_customer != null)
+            ListTile(
+              title: Row(
+                children: [
+                  const Text(
+                    "Customer:  ",
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    "${_customer?["firstName"] as String? ?? ""} ${_customer?["lastName"] as String? ?? ""}",
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              subtitle: Text(_customer?["address"] as String? ?? "",
+                  style: const TextStyle(fontSize: 12), maxLines: 1),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () {
+                      _orderServices.launchMap(
+                        _customer?["latitude"] as double? ?? 0.0,
+                        _customer?["longitude"] as double? ?? 0.0,
+                        _customer?["firstName"] as String? ?? "",
+                      );
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8, right: 8, bottom: 2),
+                        child: Icon(
+                          Icons.map,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(
+                    width: 10,
+                  ),
+                  InkWell(
+                    onTap: () {
+                      _orderServices.launchCall(
+                          "tel: ${_customer?["number"] as String? ?? ""}");
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 8, right: 8, bottom: 2),
+                        child: Icon(
+                          Icons.phone_in_talk,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ExpansionTile(
+            title: const Text(
+              "Order details",
+              style: TextStyle(fontSize: 12, color: Colors.black),
+            ),
+            subtitle: const Text(
+              "View order details",
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            children: [
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemBuilder: (BuildContext context, int index) {
+                  final Map<String, dynamic>? productData =
+                      documentData?["products"][index] as Map<String, dynamic>?;
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: Colors.white,
+                      child: Image.network(
+                          productData?["productImage"] as String? ?? ""),
+                    ),
+                    title: Text(
+                      productData?["productName"] as String? ?? "",
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    subtitle: Text(
+                      "${productData?["qty"]?.toString() ?? ""} x \$${productData?["price"]?.toStringAsFixed(0) as String? ?? ""} = \$${productData?["total"]?.toStringAsFixed(0) as String? ?? ""}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                  );
+                },
+                itemCount: documentData?["products"]?.length ?? 0,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(
+                    left: 12, right: 12, top: 8, bottom: 8),
+                child: Card(
+                  elevation: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              "Seller : ",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            Text(
+                              documentData?["seller"]["shopName"] as String? ??
+                                  "",
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(
+                          height: 10,
+                        ),
+                        if (int.parse(
+                                documentData?["discount"] as String? ?? "0") >
+                            0)
+                          // this will show up only if discount is available
+                          Container(
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text(
+                                      "Discount : ",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12),
+                                    ),
+                                    Text(
+                                      documentData?["discount"] as String? ??
+                                          "",
+                                      style: const TextStyle(
+                                          color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(
+                                  height: 10,
+                                ),
+                                Row(
+                                  children: [
+                                    const Text(
+                                      "Discount Code: ",
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12),
+                                    ),
+                                    Text(
+                                      documentData?["discountCode"]
+                                              as String? ??
+                                          "",
+                                      style: const TextStyle(
+                                          color: Colors.grey, fontSize: 12),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(
+                          height: 10,
+                        ),
+                        Row(
+                          children: [
+                            const Text(
+                              "Delivery Fee: ",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                            Text(
+                              "\$${documentData?["deliveryFee"]?.toString() ?? ""}",
+                              style: const TextStyle(
+                                  color: Colors.grey, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(
+            height: 3,
+            color: Colors.grey,
+          ),
+          _orderServices.statusContainer(widget.document, context),
+          const Divider(
+            height: 3,
+            color: Colors.grey,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../services/firebase_services.dart';
 import '../services/order_services.dart';
@@ -7,7 +326,7 @@ import '../services/order_services.dart';
 
 class OrderSummaryCard extends StatefulWidget {
   final DocumentSnapshot document;
-  const OrderSummaryCard({super.key, this.document});
+  const OrderSummaryCard({super.key, required this.document});
 
   @override
   State<OrderSummaryCard> createState() => _OrderSummaryCardState();
@@ -247,4 +566,4 @@ class _OrderSummaryCardState extends State<OrderSummaryCard> {
                             ),
                           );
   }
-}
+}*/
